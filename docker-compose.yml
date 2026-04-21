@@ -1,0 +1,13 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ocr2md-app
+    environment:
+      OCR2MD_CONFIG: /app/ocr2md/config.docker.yaml
+    volumes:
+      - ./models:/app/models
+      - ./output:/app/output
+    ports:
+      - "127.0.0.1:8000:8000"
