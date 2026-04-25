@@ -52,6 +52,26 @@ class ModelManager:
         )
 
     def _resolve_model_dir(self, model_dir: str) -> Path:
+        raw = Path(str(model_dir).strip()).expanduser()
+        base = raw.resolve() if raw.is_absolute() else (Path.cwd() / raw).resolve()
+
+        if base.is_dir() and not self._matches_dir_hints(base, GLM_MODEL_DIR_HINTS):
+            default_glm_dir = (base / GLM_DEFAULT_SUBDIR).resolve()
+            hinted_subdirs = sorted(
+                [
+                    item.resolve()
+                    for item in base.iterdir()
+                    if item.is_dir() and self._matches_dir_hints(item, GLM_MODEL_DIR_HINTS)
+                ],
+                key=lambda item: item.name.lower(),
+            )
+            if hinted_subdirs:
+                return hinted_subdirs[0]
+
+            # Treat a generic root like ./models as a container directory and keep
+            # the GLM model anchored at its dedicated subdirectory.
+            return default_glm_dir
+
         return resolve_model_dir_path(
             model_dir,
             required_files=(
@@ -77,6 +97,7 @@ class ModelManager:
         base = raw.resolve() if raw.is_absolute() else (Path.cwd() / raw).resolve()
 
         if base.is_dir() and not self._matches_dir_hints(base, LAYOUT_MODEL_DIR_HINTS):
+            default_layout_dir = (base / LAYOUT_DEFAULT_SUBDIR).resolve()
             hinted_subdirs = sorted(
                 [
                     item.resolve()
@@ -87,6 +108,10 @@ class ModelManager:
             )
             if hinted_subdirs:
                 return hinted_subdirs[0]
+
+            # Treat a generic root like ./models as a container directory and keep
+            # the layout model anchored at its dedicated subdirectory.
+            return default_layout_dir
 
         return resolve_model_dir_path(
             model_dir,

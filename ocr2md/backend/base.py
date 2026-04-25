@@ -411,6 +411,17 @@ class BaseBackend(ABC):
 
         return "cpu"
 
+    def _get_model_input_dtype(self):
+        """Get the active model parameter dtype for floating-point inputs."""
+        model = getattr(self, "_model", None)
+        if model is not None:
+            try:
+                return next(model.parameters()).dtype
+            except Exception:
+                pass
+
+        return None
+
     @abstractmethod
     def _process_inputs(
         self,
@@ -520,6 +531,7 @@ class BaseBackend(ABC):
         with self._generate_lock:
             # Get input device
             input_device = self._get_input_device()
+            model_input_dtype = self._get_model_input_dtype()
 
             # Process inputs
             inputs = self._process_inputs(messages, task_type=task_type)
@@ -528,8 +540,22 @@ class BaseBackend(ABC):
 
             # Move inputs to correct device
             if input_device and hasattr(inputs, "items"):
+                def _move_input_value(value: Any) -> Any:
+                    if not hasattr(value, "to"):
+                        return value
+
+                    to_kwargs: Dict[str, Any] = {"device": input_device}
+                    if (
+                        model_input_dtype is not None
+                        and hasattr(value, "is_floating_point")
+                        and value.is_floating_point()
+                    ):
+                        to_kwargs["dtype"] = model_input_dtype
+
+                    return value.to(**to_kwargs)
+
                 inputs = {
-                    key: value.to(input_device) if hasattr(value, "to") else value
+                    key: _move_input_value(value)
                     for key, value in inputs.items()
                 }
 
