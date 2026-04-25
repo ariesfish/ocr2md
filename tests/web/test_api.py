@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Generator
+from zipfile import ZipFile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -434,3 +435,54 @@ def test_get_task_crop_preview(client: tuple[TestClient, SimpleNamespace]) -> No
 
     assert response.status_code == 200
     assert response.headers.get("content-type", "").startswith("image/")
+
+
+def test_download_task_markdown_without_images(
+    client: tuple[TestClient, SimpleNamespace],
+) -> None:
+    test_client, services = client
+    task = services.task_store.create_task(task_type="ocr", request_id="req_md_download")
+
+    with tempfile.TemporaryDirectory(prefix="ocr2md_md_download_") as tmp_dir:
+        services.config.pipeline.output.base_output_dir = tmp_dir
+        result_dir = Path(tmp_dir) / task.task_id / "results" / "glm" / "ocr2md_upload_demo"
+        result_dir.mkdir(parents=True, exist_ok=True)
+        (result_dir / "ocr2md_upload_demo.md").write_text("# hello\n", encoding="utf-8")
+
+        response = test_client.get(f"/api/tasks/{task.task_id}/models/glm/download")
+
+    assert response.status_code == 200
+    assert response.headers.get("content-type", "").startswith("text/markdown")
+    assert 'filename="demo.md"' in response.headers.get("content-disposition", "")
+    assert response.content == b"# hello\n"
+
+
+def test_download_task_markdown_with_images_returns_zip(
+    client: tuple[TestClient, SimpleNamespace],
+) -> None:
+    test_client, services = client
+    task = services.task_store.create_task(task_type="ocr", request_id="req_zip_download")
+
+    with tempfile.TemporaryDirectory(prefix="ocr2md_zip_download_") as tmp_dir:
+        services.config.pipeline.output.base_output_dir = tmp_dir
+        result_dir = Path(tmp_dir) / task.task_id / "results" / "glm" / "ocr2md_upload_demo"
+        imgs_dir = result_dir / "imgs"
+        imgs_dir.mkdir(parents=True, exist_ok=True)
+        (result_dir / "ocr2md_upload_demo.md").write_text(
+            "![crop](imgs/region.jpg)\n",
+            encoding="utf-8",
+        )
+        (imgs_dir / "region.jpg").write_bytes(b"jpg-bytes")
+
+        response = test_client.get(f"/api/tasks/{task.task_id}/models/glm/download")
+
+    assert response.status_code == 200
+    assert response.headers.get("content-type", "").startswith("application/zip")
+    assert 'filename="demo.zip"' in response.headers.get("content-disposition", "")
+    with tempfile.TemporaryDirectory(prefix="ocr2md_zip_assert_") as tmp_dir:
+        zip_file = Path(tmp_dir) / "result.zip"
+        zip_file.write_bytes(response.content)
+        with ZipFile(zip_file) as archive:
+            assert sorted(archive.namelist()) == ["demo.md", "imgs/region.jpg"]
+            assert archive.read("demo.md") == b"![crop](imgs/region.jpg)\n"
+            assert archive.read("imgs/region.jpg") == b"jpg-bytes"

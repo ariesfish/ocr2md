@@ -3,6 +3,8 @@ from __future__ import annotations
 from io import BytesIO
 import json
 from pathlib import Path
+import re
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, StreamingResponse
@@ -12,6 +14,7 @@ from ..errors import OCRAPIError, TaskLookupError
 from ..schemas import TaskSnapshot
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+_MARKDOWN_IMAGE_PATH_PATTERN = re.compile(r"!\[[^\]]*\]\(((?:\./)?imgs/[^)\s]+)\)")
 
 
 def _resolve_task_dir(request: Request, task_id: str) -> Path:
@@ -65,6 +68,42 @@ def _resolve_task_model_result_dir(task_dir: Path, model_key: str) -> Path:
         )
 
     return candidates[0]
+
+
+def _resolve_model_markdown_file(result_dir: Path) -> Path:
+    candidates = sorted(path.resolve() for path in result_dir.glob("*.md") if path.is_file())
+    if not candidates:
+        raise OCRAPIError(
+            status_code=404,
+            code="MARKDOWN_NOT_FOUND",
+            message=f"Markdown result not found under: {result_dir}",
+        )
+    return candidates[0]
+
+
+def _markdown_local_image_paths(markdown_text: str, result_dir: Path) -> list[Path]:
+    image_paths: list[Path] = []
+    seen: set[Path] = set()
+    for match in _MARKDOWN_IMAGE_PATH_PATTERN.finditer(markdown_text):
+        raw_path = match.group(1)
+        normalized_path = raw_path[2:] if raw_path.startswith("./") else raw_path
+        image_path = (result_dir / normalized_path).resolve()
+        try:
+            image_path.relative_to(result_dir)
+        except ValueError:
+            continue
+        if image_path.is_file() and image_path not in seen:
+            image_paths.append(image_path)
+            seen.add(image_path)
+    return image_paths
+
+
+def _download_stem(markdown_file: Path) -> str:
+    stem = markdown_file.stem
+    for generated_prefix in ("ocr2md_upload_", "ocr2md_sync_"):
+        if stem.startswith(generated_prefix):
+            return stem.removeprefix(generated_prefix) or "result"
+    return stem or "result"
 
 
 @router.get("/{task_id}", response_model=TaskSnapshot)
@@ -285,3 +324,45 @@ def get_task_model_asset(
         )
 
     return FileResponse(path=asset_file)
+
+
+@router.get("/{task_id}/models/{model_key}/download")
+def download_task_model_markdown(
+    task_id: str,
+    model_key: str,
+    request: Request,
+):
+    if model_key != "glm":
+        raise OCRAPIError(
+            status_code=404,
+            code="MODEL_NOT_FOUND",
+            message=f"Unsupported model key: {model_key}",
+        )
+
+    task_dir = _resolve_task_dir(request, task_id)
+    result_dir = _resolve_task_model_result_dir(task_dir, model_key)
+    markdown_file = _resolve_model_markdown_file(result_dir)
+    markdown_text = markdown_file.read_text(encoding="utf-8")
+    image_paths = _markdown_local_image_paths(markdown_text, result_dir)
+
+    if not image_paths:
+        return FileResponse(
+            path=markdown_file,
+            media_type="text/markdown; charset=utf-8",
+            filename=f"{_download_stem(markdown_file)}.md",
+        )
+
+    buffer = BytesIO()
+    markdown_archive_name = f"{_download_stem(markdown_file)}.md"
+    with ZipFile(buffer, mode="w", compression=ZIP_DEFLATED) as archive:
+        archive.write(markdown_file, arcname=markdown_archive_name)
+        for image_path in image_paths:
+            archive.write(image_path, arcname=str(image_path.relative_to(result_dir)))
+    buffer.seek(0)
+
+    zip_name = f"{_download_stem(markdown_file)}.zip"
+    return StreamingResponse(
+        buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
+    )

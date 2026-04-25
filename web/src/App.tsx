@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as Progress from "@radix-ui/react-progress";
 import {
-  Copy,
   Download,
   FileText,
   LoaderCircle,
@@ -38,7 +37,7 @@ const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const ACCEPTED_EXT = ["jpg", "jpeg", "png", "webp", "bmp", "gif", "pdf"];
 
 const EMPTY_RESULT: OCRModelResult = {
-  name: "GLM-OCR",
+  name: "OCR",
   latency_ms: null,
   confidence_avg: null,
   text: "",
@@ -176,6 +175,7 @@ function ModelCard({
   model,
   preview,
   previewKind,
+  isPdfSelected,
   layoutPages,
   sourcePages,
   imageSize,
@@ -188,6 +188,7 @@ function ModelCard({
   model: OCRModelResult;
   preview: string | null;
   previewKind: PreviewKind;
+  isPdfSelected: boolean;
   layoutPages: string[];
   sourcePages: number[];
   imageSize: ImageSize;
@@ -197,7 +198,6 @@ function ModelCard({
   currentPage: number | null;
   totalPages: number;
 }) {
-  const [copied, setCopied] = useState(false);
   const [contentView, setContentView] = useState<ContentView>("rendered");
   const latencyText =
     elapsedMs == null ? "--" : `${(elapsedMs / 1000).toFixed(3)} 秒`;
@@ -219,6 +219,7 @@ function ModelCard({
     : "relative h-full w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-100";
   const isRunning = runState === "running";
   const hasText = Boolean(model.text);
+  const downloadUrl = taskId ? `/api/tasks/${taskId}/models/glm/download` : null;
   const content = model.error
     ? `错误: ${model.error}`
     : model.text || (isRunning ? "识别中..." : "暂无结果");
@@ -226,7 +227,7 @@ function ModelCard({
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-        <div className="font-semibold text-slate-800">{model.name}</div>
+        <div className="font-semibold text-slate-800">OCR</div>
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <span>总耗时 {latencyText}</span>
           {pageProgressText ? (
@@ -253,7 +254,7 @@ function ModelCard({
                   >
                     <div className="border-b border-slate-100 px-3 py-2 text-xs font-medium text-slate-500">
                       第 {index + 1} 页
-                      {sourcePages[index] ? ` / 原 PDF 第 ${sourcePages[index]} 页` : ""}
+                      {isPdfSelected && sourcePages[index] ? ` / 原 PDF 第 ${sourcePages[index]} 页` : ""}
                     </div>
                     <img src={pageUrl} alt={`layout page ${index + 1}`} className="w-full" />
                   </div>
@@ -309,18 +310,16 @@ function ModelCard({
               <button
                 type="button"
                 className="inline-flex items-center gap-1 rounded-md p-1.5 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
-                disabled={!hasText}
-                onClick={async () => {
-                  if (!model.text) {
+                disabled={!hasText || !downloadUrl}
+                title="下载 Markdown"
+                onClick={() => {
+                  if (!downloadUrl) {
                     return;
                   }
-                  await navigator.clipboard.writeText(model.text);
-                  setCopied(true);
-                  window.setTimeout(() => setCopied(false), 1200);
+                  window.location.href = downloadUrl;
                 }}
               >
-                {copied ? <span className="text-[11px] text-emerald-600">已复制</span> : null}
-                <Copy size={13} />
+                <Download size={13} />
               </button>
             </div>
           </div>
@@ -918,6 +917,7 @@ export default function App() {
           model={result}
           preview={preview}
           previewKind={previewKind}
+          isPdfSelected={isPdfSelected}
           layoutPages={layoutPageUrls}
           sourcePages={sourcePages}
           imageSize={imageSize}

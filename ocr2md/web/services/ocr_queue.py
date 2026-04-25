@@ -47,15 +47,10 @@ class OCRTaskQueue:
         file_bytes: bytes,
         selected_pages: Optional[List[int]] = None,
     ) -> None:
-        suffix = Path(filename).suffix or ".png"
-        with tempfile.NamedTemporaryFile(
-            mode="wb",
-            suffix=suffix,
-            prefix="ocr2md_upload_",
-            delete=False,
-        ) as temp_file:
-            temp_file.write(file_bytes)
-            temp_path = Path(temp_file.name).resolve()
+        safe_filename = Path(filename).name or "upload.png"
+        temp_dir = Path(tempfile.mkdtemp(prefix="ocr2md_upload_"))
+        temp_path = (temp_dir / safe_filename).resolve()
+        temp_path.write_bytes(file_bytes)
 
         self._queue.put(
             OCRQueueItem(
@@ -135,6 +130,7 @@ class OCRTaskQueue:
             finally:
                 try:
                     item.file_path.unlink(missing_ok=True)
+                    item.file_path.parent.rmdir()
                 except Exception:
                     logger.warning("Failed to delete temp input: %s", item.file_path)
                 self._queue.task_done()

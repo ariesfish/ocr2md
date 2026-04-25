@@ -11,7 +11,7 @@ export type OCRBox = {
 };
 
 export type OCRModelResult = {
-  name: "GLM-OCR" | string;
+  name: string;
   latency_ms: number | null;
   confidence_avg: number | null;
   text: string;
