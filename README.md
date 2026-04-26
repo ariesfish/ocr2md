@@ -110,11 +110,17 @@ docker compose up --build
 
 ## 模型下载与使用
 
-### 界面效果示例
+### 示例效果
 
-下图是 Web 界面的实际识别效果：左侧展示版面定位结果，右侧展示 OCR 输出的 Markdown 预览，方便对照检查识别内容与原始区域。
+以下图片展示了不同类型文档的 OCR 示例效果，覆盖手写内容、表格、公式论文以及多语言场景。
 
-![ocr2md Web 识别结果示例](assets/screenshot.png)
+| 手写内容 | 表格识别 |
+| --- | --- |
+| ![手写内容 OCR 示例效果](assets/handwriting.png) | ![表格 OCR 示例效果](assets/table.png) |
+
+| 公式论文 | 多语言 |  |
+| --- | --- | --- |
+| ![公式论文 OCR 示例效果](assets/paper-math.png) | ![日文 OCR 示例效果](assets/japanese.png) | ![韩文 OCR 示例效果](assets/korean.png) |
 
 使用时可以按照这个界面流转：
 
